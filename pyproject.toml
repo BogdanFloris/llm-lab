@@ -1,0 +1,16 @@
+[project]
+name = "llm-lab"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "jax[cuda13]",
+    "numpy",
+    "optax",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
