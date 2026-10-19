@@ -1,6 +1,6 @@
 # LLM study plan
 
-Goal: understand LLMs well enough to trace and visualize what happens inside them, and to read new architecture and interpretability papers properly. Two texts mark the finish line:
+Goal: understand LLMs well enough to trace and visualize what happens inside them, and to read new architecture and interpretability papers properly. The point is understanding, with proof others can check, not pushing the frontier. Two texts mark the finish line:
 
 - [DeepSeek-V4.1-Flash: Pushing the Limits of KV Cache Compression](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf) (DeepSeek-AI, September 2026)
 - [Neural Networks Are Already Clean](https://already-clean.goodfire.com) (Nick Cammarata, Goodfire; a 65-minute read)
@@ -12,12 +12,13 @@ This replaces the October JAX block (small transformer, then RL, then Pallas). R
 | # | Module | Read | Build | Hours |
 |---|---|---|---|---|
 | 1 | GPT from scratch | Karpathy's video, JAX docs | the JAX lab | ~15 |
-| 2 | A real model | RoPE, GQA, transformer math | Qwen3-0.6B in plain JAX | ~12 |
+| 2 | A real model | RoPE, GQA, the Gemma 3 report, transformer math | Gemma 3 1B in plain JAX | ~12 |
 | 3 | Inference and the KV cache | rooflines, MLA, sparse attention, then **DeepSeek-V4.1-Flash** | a KV cache, compression experiments | ~18 |
 | 4 | Neurons | circuits, superposition, SAEs, then **Already Clean** | activation recorder, neuron viewer, mini-audit | ~18 |
 
+About 60 hours, so roughly 10 weeks at 6 hours a week. The hours are my estimate, not measured.
 
-- 1 and 2 are the base. 3 and 4 can go in either order.
+- 1 and 2 are the base. Do 4 next; 3 can wait.
 - From module 2 on, everything runs on a model you wrote, so any activation or KV entry is one return value away. No hooks, no framework.
 - Every module ends with something you trace or visualize. That's the moat: few people both read frontier architecture papers and build the tools to see inside models. You have the tooling half; this adds the model half and makes you use both every time.
 
@@ -41,21 +42,22 @@ Done when the tests pass (shapes under jit, initial loss ≈ ln 65, causality, o
 
 ## 2. A real model
 
-Qwen3-0.6B in plain JAX. It has the modern block (RMSNorm, RoPE, SwiGLU, grouped-query attention, QK-norm), fits the 5070 easily, and is the family the Goodfire essay audits (Qwen3-32B).
+Gemma 3 1B in plain JAX. It has the modern block, fits the 5070 easily (about 2 GB in bf16), and Gemma Scope 2 publishes sparse autoencoders and transcoders for every layer of it, so module 4 can compare your neurons against public features. It's also a different family from the essay's Qwen3-32B, so your audit tests whether the claim travels.
 
 Read
 - [Rotary Embeddings: A Relative Revolution](https://blog.eleuther.ai/rotary-embeddings/) (EleutherAI).
-- [GQA](https://arxiv.org/abs/2305.13245), sections 1–2.
-- [All the Transformer Math You Need to Know](https://jax-ml.github.io/scaling-book/transformers/) (How to Scale Your Model). Count Qwen3-0.6B's parameters and FLOPs per token by hand.
-- [`modeling_qwen3.py`](https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/modeling_qwen3.py) as the reference. Read it, don't copy it.
+- [GQA](https://arxiv.org/abs/2305.13245), sections 1–2. Gemma 3 1B is the extreme case: one KV head shared by all four query heads.
+- [Gemma 3 Technical Report](https://arxiv.org/abs/2503.19786), the architecture section: local and global attention layers, QK-norm.
+- [All the Transformer Math You Need to Know](https://jax-ml.github.io/scaling-book/transformers/) (How to Scale Your Model). Count Gemma 3 1B's parameters and FLOPs per token by hand.
+- [`gemma/gm/nn`](https://github.com/google-deepmind/gemma/tree/main/gemma/gm/nn) in the official JAX library, as the reference. Read it, don't copy it. Before writing `forward`, find these in it: embeddings scaled by √1152, RMSNorm multiplying by (1 + scale), a norm both before and after attention and the MLP, an MLP of `gelu(gate) * up`, five local layers (512-token window, RoPE base 10k) for every global one (base 1M), tied embeddings.
 
 Build
-- You: load the [weights](https://huggingface.co/Qwen/Qwen3-0.6B) into a pytree, write `forward` and greedy decoding. Agent: download, tokenizer, and a test against Hugging Face transformers.
+- You: load the [weights](https://huggingface.co/google/gemma-3-1b-pt) (accept the Gemma terms on Hugging Face first) into a pytree, write `forward` and greedy decoding. Agent: download, tokenizer, and a test against the official [`gemma`](https://pypi.org/project/gemma/) library.
 - Let `forward` return any intermediate you ask for (residual stream, attention weights, MLP activations). Modules 3 and 4 tap them.
 
 Trace: plot the residual-stream norm per layer for one prompt and explain what you see.
 
-Done when greedy output matches transformers token for token on a few prompts (fp32) and you can draw the block from memory.
+Done when greedy output matches the `gemma` library token for token on a few prompts (fp32) and you can draw the block from memory.
 
 ## 3. Inference and the KV cache
 
@@ -69,19 +71,19 @@ Read, in order
 
 V4.1's frame (section 2.3): KV cache size multiplies along three axes, entry size (GQA, MLA), sequence (CSA, HCA) and layers (cross-layer reuse). Precision is a fourth factor, which V4.1 pushes to FP4. The build touches all four.
 
-Build, on your Qwen3
+Build, on your Gemma
 - You: a KV cache. Prefill once, then decode one token per step into a fixed-size cache so `jit` compiles once.
 - Predict ms per decoded token at 1k and 8k context: bytes read per step (weights plus KV cache) ÷ 672 GB/s, the 5070's memory bandwidth. Then measure.
-- A compression table: bytes per token and held-out perplexity for a naive version of each axis, on a model that wasn't trained for any of them:
+- A compression table: bytes per token and held-out perplexity for a naive version of each axis, on a model that wasn't trained for them. Gemma's five-local-to-one-global layout is already a trained sequence-axis compression, so it goes in the table as the baseline:
   - precision: FP8, and FP4 E2M1 with one E4M3 scale per 16 channels, quantized after RoPE (V4.1 section 2.4.4), simulated by quantizing then dequantizing
-  - sequence: a sliding window, or mean-pooling every m keys
+  - sequence: the sliding window on the global layers too, or mean-pooling every m keys
   - layers: a layer reusing the previous layer's KV
   - entry (optional): cache a rank-r latent of K and V from an SVD of their projection weights, MLA-style
 - You write the variants; the agent writes the perplexity loop.
 
 Trace: prefill and decode side by side in one Perfetto trace, and your table plotted next to V4.1's Figure 1(b).
 
-Done when you can explain where Qwen3-0.6B's 112 KiB per token (bf16) and V4.1-Flash's 890 bytes of global KV per token go, what the Full, Reindex and Reuse modes each store, and the gap between your naive numbers and DeepSeek's trained ones.
+Done when you can explain Gemma 3 1B's cache (1 KiB per token per layer in bf16, but only its 4 global layers keep the whole context; the other 22 keep the last 512 tokens), where V4.1-Flash's 890 bytes of global KV per token go, what the Full, Reindex and Reuse modes each store, and the gap between your naive numbers and DeepSeek's trained ones.
 
 ## 4. Neurons
 
@@ -93,12 +95,13 @@ Read, in order
 5. [Towards Monosemanticity](https://transformer-circuits.pub/2023/monosemantic-features/index.html), skim: sparse autoencoders, the field's answer to superposition.
 6. **Neural Networks Are Already Clean**.
 
-Build, on your Qwen3
-- Activation recorder: stream about 10M tokens of [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) (`sample-10BT`) through the model and keep the top contexts for each MLP neuron (one channel of `silu(gate) * up`, 3,072 per layer), for its positive and its negative pole. Agent: data plumbing. You: the capture and the top-k bookkeeping.
+Build, on your Gemma
+- Activation recorder: stream about 10M tokens of [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) (`sample-10BT`) through the model and keep the top contexts for each MLP neuron (one channel of `gelu(gate) * up`, 6,912 per layer across 26 layers), for its positive and its negative pole. Agent: data plumbing. You: the capture and the top-k bookkeeping.
 - Neuron viewer: one static page per neuron, tokens shaded by activation, both poles side by side. Yours to write; it's your trade.
 - Mini-audit: label 50 random neuron poles as one job, two related jobs or unclear, and compare with the essay's ~90 / 7 / 2–4 % for Qwen3-32B. Then have the agent label the same 50 without seeing yours, and compare.
+- Neurons against features: put five of your neurons next to Gemma Scope 2's features for the same layer (browsable on Neuronpedia) and note which explains the text better.
 
-Done when you can state the essay's claim and the evidence it re-reads, and say whether your 0.6B audit agrees.
+Done when you can state the essay's claim and the evidence it re-reads, and say whether your 1B audit agrees.
 
 ## Later
 
