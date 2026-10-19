@@ -1,6 +1,6 @@
 import argparse
-from datetime import datetime
 import json
+from datetime import datetime
 from pathlib import Path
 
 import jax
@@ -22,14 +22,14 @@ def evaluate(params, tokens, key, batch_size, block_size, batches):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--steps", type=int, default=3000)
-    parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--block-size", type=int, default=8)
-    parser.add_argument("--eval-every", type=int, default=300)
-    parser.add_argument("--eval-batches", type=int, default=20)
-    parser.add_argument("--seed", type=int, default=1337)
-    parser.add_argument("--sample-tokens", type=int, default=300)
-    parser.add_argument("--out", type=Path)
+    _ = parser.add_argument("--steps", type=int, default=3000)
+    _ = parser.add_argument("--batch-size", type=int, default=32)
+    _ = parser.add_argument("--block-size", type=int, default=8)
+    _ = parser.add_argument("--eval-every", type=int, default=300)
+    _ = parser.add_argument("--eval-batches", type=int, default=20)
+    _ = parser.add_argument("--seed", type=int, default=1337)
+    _ = parser.add_argument("--sample-tokens", type=int, default=300)
+    _ = parser.add_argument("--out", type=Path)
     args = parser.parse_args()
 
     tokenizer, train, val = load_data()
@@ -39,7 +39,7 @@ def main():
     params = init_params(init_key, len(tokenizer))
     opt_state = optimizer.init(params)
     output = args.out or Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    output.mkdir(parents=True, exist_ok=True)
+    _ = output.mkdir(parents=True, exist_ok=True)
     config = {**vars(args), "out": str(output), "vocab_size": len(tokenizer)}
     (output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
@@ -73,7 +73,7 @@ def main():
             params, opt_state, _ = train_step(params, opt_state, x, y)
 
     text = generate(params, tokenizer, sample_key, max_new_tokens=args.sample_tokens)
-    (output / "sample.txt").write_text(text)
+    _ = (output / "sample.txt").write_text(text)
     print("\n" + text)
 
 

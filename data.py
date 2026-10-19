@@ -6,7 +6,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-
 DATA_PATH = Path(__file__).parent / "data" / "input.txt"
 DATA_URL = (
     "https://raw.githubusercontent.com/karpathy/char-rnn/"

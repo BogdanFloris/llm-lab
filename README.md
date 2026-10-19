@@ -14,7 +14,7 @@ Without direnv, run commands inside `nix develop`.
 
 Nix supplies Python and native libraries. uv locks Python packages, including
 JAX's CUDA wheels. The shell exposes the host NVIDIA driver, not a second CUDA
-toolkit.
+toolkit. JAX preallocation is disabled so it can share the GPU with the desktop.
 
 ## Bigram
 
