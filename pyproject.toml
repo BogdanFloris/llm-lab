@@ -11,6 +11,9 @@ dependencies = [
 [dependency-groups]
 dev = ["pytest"]
 
+[tool.basedpyright]
+typeCheckingMode = "standard"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
