@@ -1,17 +1,17 @@
 import argparse
 import json
 from datetime import datetime
+from importlib import import_module
 from pathlib import Path
 
 import jax
 import numpy as np
 
-from bigram import init_params, loss_fn, optimizer, train_step
 from data import get_batch, load_data
 from sample import generate
 
 
-def evaluate(params, tokens, key, batch_size, block_size, batches):
+def evaluate(loss_fn, params, tokens, key, batch_size, block_size, batches):
     evaluate_batch = jax.jit(loss_fn)
     losses = []
     for batch_key in jax.random.split(key, batches):
@@ -22,6 +22,7 @@ def evaluate(params, tokens, key, batch_size, block_size, batches):
 
 def main():
     parser = argparse.ArgumentParser()
+    _ = parser.add_argument("--model", choices=["bigram", "attention"], default="bigram")
     _ = parser.add_argument("--steps", type=int, default=3000)
     _ = parser.add_argument("--batch-size", type=int, default=32)
     _ = parser.add_argument("--block-size", type=int, default=8)
@@ -31,13 +32,16 @@ def main():
     _ = parser.add_argument("--sample-tokens", type=int, default=300)
     _ = parser.add_argument("--out", type=Path)
     args = parser.parse_args()
+    model = import_module(args.model)
+    if args.model == "attention" and args.block_size > model.T_MAX:
+        parser.error(f"--block-size must be <= attention.T_MAX ({model.T_MAX})")
 
     tokenizer, train, val = load_data()
     init_key, train_key, eval_key, sample_key = jax.random.split(
         jax.random.key(args.seed), 4
     )
-    params = init_params(init_key, len(tokenizer))
-    opt_state = optimizer.init(params)
+    params = model.init_params(init_key, len(tokenizer))
+    opt_state = model.optimizer.init(params)
     output = args.out or Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     _ = output.mkdir(parents=True, exist_ok=True)
     config = {**vars(args), "out": str(output), "vocab_size": len(tokenizer)}
@@ -52,11 +56,11 @@ def main():
                 row = {
                     "step": step,
                     "train_loss": evaluate(
-                        params, train, train_eval_key,
+                        model.loss_fn, params, train, train_eval_key,
                         args.batch_size, args.block_size, args.eval_batches,
                     ),
                     "val_loss": evaluate(
-                        params, val, val_eval_key,
+                        model.loss_fn, params, val, val_eval_key,
                         args.batch_size, args.block_size, args.eval_batches,
                     ),
                 }
@@ -70,9 +74,12 @@ def main():
                 break
             train_key, batch_key = jax.random.split(train_key)
             x, y = get_batch(train, batch_key, args.batch_size, args.block_size)
-            params, opt_state, _ = train_step(params, opt_state, x, y)
+            params, opt_state, _ = model.train_step(params, opt_state, x, y)
 
-    text = generate(params, tokenizer, sample_key, max_new_tokens=args.sample_tokens)
+    text = generate(
+        model.forward, params, tokenizer, sample_key,
+        block_size=args.block_size, max_new_tokens=args.sample_tokens,
+    )
     _ = (output / "sample.txt").write_text(text)
     print("\n" + text)
 

@@ -18,7 +18,7 @@ toolkit. JAX preallocation is disabled so it can share the GPU with the desktop.
 
 ## Bigram
 
-Start in `bigram.py`. The four unfinished functions are yours:
+The four model functions in `bigram.py` are learner-owned:
 
 1. `init_params`: choose a parameter pytree; use small random initial logits.
 2. `forward`: `(B, T)` integer token IDs to `(B, T, V)` logits.
@@ -36,12 +36,11 @@ Agent-owned files:
 - `train.py`: training and evaluation, JSONL metrics and generated text in `runs/`.
   Evaluation reuses fixed batches for comparable checkpoints and has separate
   random keys from training.
-- `sample.py`: categorical sampling, using one previous character for this
-  bigram only. This is not the greedy-decoding exercise from module 2.
+- `sample.py`: categorical sampling using a cropped context of up to
+  `--block-size` tokens. This is not the greedy-decoding exercise from module 2.
 - `tests/`: data checks and model behavior checks.
 
-The model tests intentionally fail with `NotImplementedError` until implemented.
-Only the data tests can pass initially:
+Data tests:
 
 ```sh
 uv run pytest tests/test_data.py
@@ -55,4 +54,26 @@ uv run pytest tests/test_bigram.py
 uv run python train.py
 ```
 
-No model training or loss measurements have been run as part of scaffolding.
+Measured progress and understanding checks live in `PROGRESS.md`.
+
+## Single-head attention
+
+`attention.py` is also learner-owned, with the same model interface.
+`train.py --model attention` selects it; the default is still `bigram`.
+The block size must not exceed `attention.T_MAX`.
+
+Sampling now passes the full available context, cropped to the block size.
+Positions start at zero within each cropped window, as in training.
+Short contexts may cause additional JIT compilations as sampling starts.
+
+Before measuring attention loss or training, predict the relevant loss.
+After that checkpoint:
+
+```sh
+uv run pytest tests/test_attention.py
+uv run python train.py --model attention
+```
+
+Attention tests check eager/jitted output shapes, causality, unequal embedding
+and head widths, and finite scalar loss. They do not establish that training
+converges or that initialization is well scaled.
