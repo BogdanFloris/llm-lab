@@ -1,12 +1,13 @@
 import argparse
 import json
 from datetime import datetime
-from importlib import import_module
 from pathlib import Path
 
 import jax
 import numpy as np
 
+import model
+from checkpoint import save_checkpoint
 from data import get_batch, load_data
 from sample import generate
 
@@ -22,7 +23,6 @@ def evaluate(loss_fn, params, tokens, key, batch_size, block_size, batches):
 
 def main():
     parser = argparse.ArgumentParser()
-    _ = parser.add_argument("--model", choices=["bigram", "attention"], default="bigram")
     _ = parser.add_argument("--steps", type=int, default=3000)
     _ = parser.add_argument("--batch-size", type=int, default=32)
     _ = parser.add_argument("--block-size", type=int, default=8)
@@ -32,9 +32,8 @@ def main():
     _ = parser.add_argument("--sample-tokens", type=int, default=300)
     _ = parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    model = import_module(args.model)
-    if args.model == "attention" and args.block_size > model.T_MAX:
-        parser.error(f"--block-size must be <= attention.T_MAX ({model.T_MAX})")
+    if not 1 <= args.block_size <= model.T_MAX:
+        parser.error(f"--block-size must be between 1 and model.T_MAX ({model.T_MAX})")
 
     tokenizer, train, val = load_data()
     init_key, train_key, eval_key, sample_key = jax.random.split(
@@ -44,7 +43,19 @@ def main():
     opt_state = model.optimizer.init(params)
     output = args.out or Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     _ = output.mkdir(parents=True, exist_ok=True)
-    config = {**vars(args), "out": str(output), "vocab_size": len(tokenizer)}
+    config = {
+        **vars(args),
+        "out": str(output),
+        "vocab_size": len(tokenizer),
+        "vocab": tokenizer.chars,
+        "model": {
+            "module": model.__name__,
+            "n_embed": model.N_EMBED,
+            "head_w": model.HEAD_W,
+            "t_max": model.T_MAX,
+            "no_heads": model.NO_HEADS,
+        },
+    }
     (output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
     print(f"Devices: {jax.devices()}")
@@ -76,6 +87,7 @@ def main():
             x, y = get_batch(train, batch_key, args.batch_size, args.block_size)
             params, opt_state, _ = model.train_step(params, opt_state, x, y)
 
+    save_checkpoint(output / "params.pkl", params, config)
     text = generate(
         model.forward, params, tokenizer, sample_key,
         block_size=args.block_size, max_new_tokens=args.sample_tokens,
