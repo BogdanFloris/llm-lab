@@ -82,7 +82,20 @@ uv run python train.py
 ```
 
 Model tests check array-pytree compatibility, eager/jitted output shapes,
-causality, unequal embedding/head widths, and finite scalar loss. They do not
+causality, alternate embedding widths, and finite scalar loss. They do not
 establish that training converges or that initialization is well scaled.
-The current learner-owned refactor has initialization blockers; passing harness
-tests does not mean the model is ready to train.
+
+## Dropout integration
+
+The harness calls forward/loss with `key=None, is_training=False` for evaluation
+and generation. Evaluation uses its random key for batch selection only.
+Sampling still uses randomness to select tokens, but not inside the model.
+
+Training splits independent continuation, batch, and dropout keys each step,
+then passes the dropout key to `model.train_step`. The model is responsible
+for splitting independent keys for its blocks and dropout locations.
+The checkpoint configuration records the dropout rate.
+
+Training mode and rate must be known when tracing Python conditionals.
+No dropout training experiment has been run yet; current verification and
+open issues are recorded in `PROGRESS.md`.

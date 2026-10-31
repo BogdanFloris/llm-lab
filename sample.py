@@ -5,7 +5,9 @@ def generate(
     forward, params, tokenizer, key, *,
     block_size, prompt="\n", max_new_tokens=300,
 ):
-    next_logits = jax.jit(lambda params, tokens: forward(params, tokens)[0, -1])
+    next_logits = jax.jit(
+        lambda params, tokens: forward(params, tokens, key=None, is_training=False)[0, -1]
+    )
     tokens = tokenizer.encode(prompt).tolist()
     for _ in range(max_new_tokens):
         key, draw_key = jax.random.split(key)

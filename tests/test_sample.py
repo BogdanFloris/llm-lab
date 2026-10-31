@@ -10,7 +10,9 @@ def test_sampling_uses_and_crops_context(monkeypatch):
     tokenizer = Tokenizer("abcde")
     contexts = []
 
-    def fixed_logits(params, tokens):
+    def fixed_logits(params, tokens, key, is_training):
+        assert key is None
+        assert is_training is False
         contexts.append(tokenizer.decode(tokens[0]))
         logits = jnp.array([-jnp.inf, -jnp.inf, -jnp.inf, -jnp.inf, 0.0])
         return jnp.broadcast_to(logits, (*tokens.shape, len(tokenizer)))
@@ -26,7 +28,9 @@ def test_sampling_uses_and_crops_context(monkeypatch):
 def test_sampling_accepts_short_context():
     tokenizer = Tokenizer("ab")
 
-    def fixed_logits(params, tokens):
+    def fixed_logits(params, tokens, key, is_training):
+        assert key is None
+        assert is_training is False
         return jnp.broadcast_to(jnp.array([-jnp.inf, 0.0]), (*tokens.shape, 2))
 
     text = sample.generate(

@@ -1,5 +1,6 @@
 import jax
 
+from dropout import dropout
 from feedforward import forward as ffwd_forward
 from feedforward import init as ffwd_init
 from layernorm import forward as ln_forward
@@ -20,8 +21,24 @@ def init(key, n_embed, n_head):
     return params
 
 
-def forward(x, params, n_embed, n_head):
+def forward(x, params, n_embed, n_head, rate, key=None, is_training=False):
     head_size = n_embed // n_head
-    x = x + mh_forward(ln_forward(x, params["ln1"]), params["mh"], head_size)
-    x = x + ffwd_forward(ln_forward(x, params["ln2"]), params["ffwd"])
+    attn_key = None
+    ffwd_key = None
+    if key is not None:
+        attn_key, ffwd_key = jax.random.split(key)
+    x = x + mh_forward(
+        ln_forward(x, params["ln1"]),
+        params["mh"],
+        head_size,
+        rate,
+        attn_key,
+        is_training,
+    )
+    x = x + dropout(
+        ffwd_forward(ln_forward(x, params["ln2"]), params["ffwd"]),
+        rate,
+        ffwd_key,
+        is_training,
+    )
     return x

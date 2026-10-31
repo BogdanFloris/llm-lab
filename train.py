@@ -13,7 +13,9 @@ from sample import generate
 
 
 def evaluate(loss_fn, params, tokens, key, batch_size, block_size, batches):
-    evaluate_batch = jax.jit(loss_fn)
+    evaluate_batch = jax.jit(
+        lambda params, x, y: loss_fn(params, x, y, key=None, is_training=False)
+    )
     losses = []
     for batch_key in jax.random.split(key, batches):
         x, y = get_batch(tokens, batch_key, batch_size, block_size)
@@ -54,6 +56,7 @@ def main():
             "t_max": model.T_MAX,
             "no_heads": model.N_HEAD,
             "n_blocks": len(params["blocks"]),
+            "dropout_rate": model.DROPOUT_RATE,
         },
     }
     (output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
@@ -83,9 +86,9 @@ def main():
                 )
             if step == args.steps:
                 break
-            train_key, batch_key = jax.random.split(train_key)
+            train_key, batch_key, dropout_key = jax.random.split(train_key, 3)
             x, y = get_batch(train, batch_key, args.batch_size, args.block_size)
-            params, opt_state, _ = model.train_step(params, opt_state, x, y)
+            params, opt_state, _ = model.train_step(params, opt_state, x, y, dropout_key)
 
     save_checkpoint(output / "params.pkl", params, config)
     text = generate(
