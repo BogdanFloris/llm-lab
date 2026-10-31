@@ -2,27 +2,31 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from feedforward import forward as ffwd_forward
-from feedforward import init as ffwd_init
-from multihead import forward as mh_forward
-from multihead import init as mh_init
+from block import forward as b_forward
+from block import init as b_init
+from layernorm import forward as ln_forward
+from layernorm import init as ln_init
 
 optimizer = optax.adam(learning_rate=1e-2)
 N_EMBED = 32
-HEAD_W = 32
 T_MAX = 8
-NO_HEADS = 4
+N_HEAD = 4
 
 
 def init_params(key, vocab_size):
     """Return a parameter pytree. Start with small random logits."""
-    keys = jax.random.split(key, 5)
+    keys = jax.random.split(key, 6)
+    blocks = {
+        "block1": b_init(keys[0], N_EMBED, N_HEAD),
+        "block2": b_init(keys[1], N_EMBED, N_HEAD),
+        "block3": b_init(keys[2], N_EMBED, N_HEAD),
+    }
     params = {
-        "token_embed": jax.random.normal(keys[0], (vocab_size, N_EMBED)) * 0.02,
-        "pos_embed": jax.random.normal(keys[1], (T_MAX, N_EMBED)) * 0.02,
-        "mh_attention": mh_init(keys[2], N_EMBED, NO_HEADS, HEAD_W),
-        "ffwd": ffwd_init(keys[3], HEAD_W),
-        "lm_head": jax.random.normal(keys[4], (HEAD_W, vocab_size)) * 0.02,
+        "token_embed": jax.random.normal(keys[3], (vocab_size, N_EMBED)) * 0.02,
+        "pos_embed": jax.random.normal(keys[4], (T_MAX, N_EMBED)) * 0.02,
+        "blocks": blocks,
+        "ln": ln_init(N_EMBED),
+        "lm_head": jax.random.normal(keys[5], (N_EMBED, vocab_size)) * 0.02,
     }
     return params
 
@@ -32,9 +36,10 @@ def forward(params, tokens):
     tok_emb = params["token_embed"][tokens]  # (B, T, N_EMBED)
     pos_emb = params["pos_embed"][jnp.arange(t)]  # (T, N_EMBED)
     x = tok_emb + pos_emb  # (B, T, N_EMBED)
-    attn_head_out = mh_forward(x, params["mh_attention"], NO_HEADS, HEAD_W)
-    ffwd_out = ffwd_forward(attn_head_out, params["ffwd"])
-    logits = ffwd_out @ params["lm_head"]
+    for block_params in params["blocks"].values():
+        x = b_forward(x, block_params, N_EMBED, N_HEAD)
+    x = ln_forward(x, params["ln"])
+    logits = x @ params["lm_head"]
     return logits
 
 

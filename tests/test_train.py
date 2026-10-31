@@ -11,10 +11,10 @@ import train
 
 
 def test_checkpoint_survives_sampling_failure(tmp_path, monkeypatch):
-    params = {"weight": jnp.ones((2, 3))}
+    params = {"weight": jnp.ones((2, 3)), "blocks": {"first": {}, "second": {}}}
     model = SimpleNamespace(
         __name__="test_model",
-        N_EMBED=3, HEAD_W=3, T_MAX=8, NO_HEADS=1,
+        N_EMBED=3, T_MAX=8, N_HEAD=1,
         init_params=lambda key, vocab_size: params,
         optimizer=SimpleNamespace(init=lambda params: None),
         loss_fn=None,
@@ -39,3 +39,4 @@ def test_checkpoint_survives_sampling_failure(tmp_path, monkeypatch):
     np.testing.assert_array_equal(checkpoint["params"]["weight"], params["weight"])
     assert checkpoint["config"]["vocab"] == tokenizer.chars
     assert checkpoint["config"]["model"]["module"] == "test_model"
+    assert checkpoint["config"]["model"]["n_blocks"] == 2

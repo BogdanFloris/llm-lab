@@ -51,9 +51,9 @@ def main():
         "model": {
             "module": model.__name__,
             "n_embed": model.N_EMBED,
-            "head_w": model.HEAD_W,
             "t_max": model.T_MAX,
-            "no_heads": model.NO_HEADS,
+            "no_heads": model.N_HEAD,
+            "n_blocks": len(params["blocks"]),
         },
     }
     (output / "config.json").write_text(json.dumps(config, indent=2) + "\n")

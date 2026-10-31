@@ -7,12 +7,21 @@ import model
 
 def test_parameters_are_an_array_pytree():
     shapes = jax.eval_shape(lambda key: model.init_params(key, 65), jax.random.key(0))
-    heads = shapes["mh_attention"]
-    assert len(heads) == model.NO_HEADS
-    for head in heads.values():
-        assert set(head) == {"q", "k", "v"}
-        for weight in head.values():
-            assert weight.shape == (model.N_EMBED, model.HEAD_W // model.NO_HEADS)
+    assert len(shapes["blocks"]) == 3
+    for block_params in shapes["blocks"].values():
+        heads = block_params["mh"]
+        assert len(heads) == model.N_HEAD
+        for head in heads.values():
+            assert set(head) == {"q", "k", "v"}
+            for weight in head.values():
+                assert weight.shape == (model.N_EMBED, model.N_EMBED // model.N_HEAD)
+        assert block_params["ffwd"]["w1"].shape == (model.N_EMBED, 4 * model.N_EMBED)
+        assert block_params["ffwd"]["w2"].shape == (4 * model.N_EMBED, model.N_EMBED)
+        for name in ("ln1", "ln2"):
+            assert block_params[name]["gamma"].shape == (model.N_EMBED,)
+            assert block_params[name]["beta"].shape == (model.N_EMBED,)
+    assert shapes["ln"]["gamma"].shape == (model.N_EMBED,)
+    assert shapes["lm_head"].shape == (model.N_EMBED, 65)
     leaves = jax.tree.leaves(shapes)
     assert leaves
     assert all(isinstance(leaf, jax.ShapeDtypeStruct) for leaf in leaves)
@@ -50,11 +59,19 @@ def test_future_tokens_cannot_change_prefix_logits():
     np.testing.assert_allclose(original[:, :3], changed[:, :3], rtol=1e-5, atol=1e-5)
 
 
-def test_head_width_can_differ_from_embedding_width(monkeypatch):
-    monkeypatch.setattr(model, "HEAD_W", 16)
+def test_stack_supports_another_embedding_width(monkeypatch):
+    monkeypatch.setattr(model, "N_EMBED", 16)
     params = model.init_params(jax.random.key(0), 65)
     tokens = jnp.zeros((2, 3), dtype=jnp.int32)
     assert jax.jit(model.forward)(params, tokens).shape == (2, 3, 65)
+
+
+def test_blocks_receive_distinct_random_keys():
+    params = model.init_params(jax.random.key(0), 65)
+    queries = [block_params["mh"][0]["q"] for block_params in params["blocks"].values()]
+    for i, query in enumerate(queries):
+        for other in queries[i + 1:]:
+            assert not np.array_equal(query, other)
 
 
 def test_loss_is_finite_scalar():
