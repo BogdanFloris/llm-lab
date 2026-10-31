@@ -68,6 +68,17 @@ def test_future_tokens_cannot_change_prefix_logits():
     np.testing.assert_allclose(original[:, :3], changed[:, :3], rtol=1e-5, atol=1e-5)
 
 
+def test_right_padding_preserves_real_token_logits():
+    params = model.init_params(jax.random.key(0), 65)
+    tokens = jnp.array([[1, 2, 3]], dtype=jnp.int32)
+    padded = jnp.pad(tokens, ((0, 0), (0, model.T_MAX - tokens.shape[1])))
+    forward = jax.jit(model.forward)
+    with jax.default_matmul_precision("highest"):
+        expected = forward(params, tokens, None)
+        actual = forward(params, padded, None)[:, :tokens.shape[1]]
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+
+
 def test_stack_supports_another_embedding_width(monkeypatch):
     monkeypatch.setattr(model, "N_EMBED", 16)
     params = model.init_params(jax.random.key(0), 65)

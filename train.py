@@ -64,6 +64,7 @@ def main():
 
     print(f"Devices: {jax.devices()}")
     print(f"Output: {output}")
+    best_val_loss = float("inf")
     with (output / "metrics.jsonl").open("w") as metrics:
         for step in range(args.steps + 1):
             if step % args.eval_every == 0 or step == args.steps:
@@ -85,6 +86,12 @@ def main():
                     f"step {step:5d} | train {row['train_loss']:.4f}"
                     f" | val {row['val_loss']:.4f}"
                 )
+                if row["val_loss"] < best_val_loss:
+                    best_val_loss = row["val_loss"]
+                    save_checkpoint(
+                        output / "best_params.pkl", params,
+                        {**config, "checkpoint_step": step, "validation_loss": best_val_loss},
+                    )
             if step == args.steps:
                 break
             train_key, batch_key, dropout_key = jax.random.split(train_key, 3)

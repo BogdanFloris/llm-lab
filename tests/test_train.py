@@ -47,6 +47,43 @@ def test_checkpoint_survives_sampling_failure(tmp_path, monkeypatch):
     assert checkpoint["config"]["block_size"] == model.T_MAX
     assert checkpoint["config"]["eval_every"] == 500
     assert checkpoint["config"]["eval_batches"] == 20
+    best = load_checkpoint(tmp_path / "best_params.pkl")
+    np.testing.assert_array_equal(best["params"]["weight"], params["weight"])
+    assert best["config"]["checkpoint_step"] == 0
+    assert best["config"]["validation_loss"] == 0.0
+
+
+def test_best_checkpoint_is_not_overwritten_by_worse_final_step(tmp_path, monkeypatch):
+    params = {"weight": jnp.array(0.0), "blocks": {"first": {}}}
+
+    def step(params, state, tokens, targets, key):
+        return {**params, "weight": params["weight"] + 1}, state, None
+
+    model = SimpleNamespace(
+        __name__="test_model",
+        N_EMBED=3, T_MAX=8, N_HEAD=1, DROPOUT_RATE=0.2, LEARNING_RATE=3e-4,
+        init_params=lambda key, vocab_size: params,
+        optimizer=SimpleNamespace(init=lambda params: None),
+        loss_fn=None, forward=None, train_step=step,
+    )
+    monkeypatch.setattr(train, "model", model)
+    monkeypatch.setattr(train, "load_data", lambda: (Tokenizer("\nab"), None, None))
+    monkeypatch.setattr(train, "get_batch", lambda *args: (None, None))
+    monkeypatch.setattr(
+        train, "evaluate", lambda loss_fn, params, *args: [2.0, 1.0, 1.5][int(params["weight"])],
+    )
+    monkeypatch.setattr(train, "generate", lambda *args, **kwargs: "\n")
+    monkeypatch.setattr(
+        sys, "argv",
+        ["train.py", "--steps", "2", "--eval-every", "1", "--out", str(tmp_path)],
+    )
+    train.main()
+    best = load_checkpoint(tmp_path / "best_params.pkl")
+    final = load_checkpoint(tmp_path / "params.pkl")
+    assert float(best["params"]["weight"]) == 1
+    assert best["config"]["checkpoint_step"] == 1
+    assert best["config"]["validation_loss"] == 1.0
+    assert float(final["params"]["weight"]) == 2
 
 
 def test_evaluation_disables_dropout_and_keeps_batch_keys(monkeypatch):

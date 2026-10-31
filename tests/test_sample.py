@@ -38,3 +38,25 @@ def test_sampling_accepts_short_context():
         block_size=3, prompt="a", max_new_tokens=4,
     )
     assert text == "abbbb"
+
+
+def test_short_context_uses_last_real_position_and_fixed_shape(monkeypatch):
+    monkeypatch.setattr(sample.jax, "jit", lambda function: function)
+    tokenizer = Tokenizer("abc")
+    shapes = []
+
+    def cyclic_logits(params, tokens, key, is_training):
+        assert key is None
+        assert is_training is False
+        shapes.append(tokens.shape)
+        targets = (tokens + 1) % len(tokenizer)
+        return jnp.where(
+            jnp.arange(len(tokenizer)) == targets[..., None], 0.0, -jnp.inf,
+        )
+
+    text = sample.generate(
+        cyclic_logits, {}, tokenizer, jax.random.key(0),
+        block_size=3, prompt="a", max_new_tokens=4,
+    )
+    assert text == "abcab"
+    assert shapes == [(1, 3)] * 4

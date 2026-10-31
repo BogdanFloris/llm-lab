@@ -41,7 +41,9 @@ Agent-owned files:
 - `sample.py`: categorical sampling using a cropped context of up to
   `--block-size` tokens. This is not the greedy-decoding exercise from module 2.
 - `checkpoint.py`: saves final parameters and run configuration to `params.pkl`
-  before sampling. Only load trusted local pickle files. Optimizer state is not
+  before sampling; future runs also retain `best_params.pkl` on validation
+  improvements, with the checkpoint step and validation loss in its config.
+  Only load trusted local pickle files. Optimizer state is not
   saved; this is for inspection/inference, not exact training resumption.
 - `tests/`: data checks and model behavior checks.
 
@@ -71,7 +73,9 @@ The block size must not exceed `model.T_MAX`.
 
 Sampling now passes the full available context, cropped to the block size.
 Positions start at zero within each cropped window, as in training.
-Short contexts may cause additional JIT compilations as sampling starts.
+Sampling right-pads short contexts and reads the last real position, keeping
+one compiled input shape. Causality prevents future padding from affecting
+real-token logits.
 
 Before measuring attention loss or training, predict the relevant loss.
 After that checkpoint:
@@ -108,8 +112,9 @@ every 500 updates over 20 batches, and seed 1337. Adam's learning rate is
 
 The longer context, larger batch, new architecture, and learning rate change
 together; this is not a controlled dropout comparison with the tiny runs.
-Actual large-model GPU memory use and throughput have not been measured.
-Do not launch the full run before the prediction/preflight checkpoint.
+The batch-64/context-256 run completed on the GPU; peak memory use and throughput
+have not been benchmarked. Results and artifact paths are in `PROGRESS.md`.
+Keep the prediction/preflight checkpoint before new experiments.
 
 Model behavior tests use a tiny configuration. `tests/test_scaling.py` checks
 the configured full-context/batch shapes via abstract tracing, without
