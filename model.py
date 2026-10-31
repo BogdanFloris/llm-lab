@@ -7,27 +7,29 @@ from block import init as b_init
 from layernorm import forward as ln_forward
 from layernorm import init as ln_init
 
-optimizer = optax.adam(learning_rate=1e-2)
-N_EMBED = 32
-T_MAX = 8
-N_HEAD = 4
+LEARNING_RATE = 3e-4
+optimizer = optax.adam(learning_rate=LEARNING_RATE)
+N_EMBED = 384
+T_MAX = 256
+N_HEAD = 6
+N_LAYER = 6
 DROPOUT_RATE = 0.2
 
 
 def init_params(key, vocab_size):
     """Return a parameter pytree. Start with small random logits."""
-    keys = jax.random.split(key, 6)
+    block_key, param_key = jax.random.split(key, 2)
+    block_keys = jax.random.split(block_key, N_LAYER)
     blocks = {
-        "block1": b_init(keys[0], N_EMBED, N_HEAD),
-        "block2": b_init(keys[1], N_EMBED, N_HEAD),
-        "block3": b_init(keys[2], N_EMBED, N_HEAD),
+        f"block_{i}": b_init(block_keys[i], N_EMBED, N_HEAD) for i in range(N_LAYER)
     }
+    keys = jax.random.split(param_key, 3)
     params = {
-        "token_embed": jax.random.normal(keys[3], (vocab_size, N_EMBED)) * 0.02,
-        "pos_embed": jax.random.normal(keys[4], (T_MAX, N_EMBED)) * 0.02,
+        "token_embed": jax.random.normal(keys[0], (vocab_size, N_EMBED)) * 0.02,
+        "pos_embed": jax.random.normal(keys[1], (T_MAX, N_EMBED)) * 0.02,
         "blocks": blocks,
         "ln": ln_init(N_EMBED),
-        "lm_head": jax.random.normal(keys[5], (N_EMBED, vocab_size)) * 0.02,
+        "lm_head": jax.random.normal(keys[2], (N_EMBED, vocab_size)) * 0.02,
     }
     return params
 
@@ -41,7 +43,9 @@ def forward(params, tokens, key=None, is_training=False):
         block_key = None
         if key is not None:
             key, block_key = jax.random.split(key)
-        x = b_forward(x, block_params, N_EMBED, N_HEAD,  DROPOUT_RATE, block_key, is_training)
+        x = b_forward(
+            x, block_params, N_EMBED, N_HEAD, DROPOUT_RATE, block_key, is_training
+        )
     x = ln_forward(x, params["ln"])
     logits = x @ params["lm_head"]
     return logits
@@ -57,7 +61,9 @@ def loss_fn(params, tokens, targets, key=None, is_training=False):
 @jax.jit
 def train_step(params, opt_state, tokens, targets, key):
     """Return (updated_params, updated_opt_state, loss)."""
-    loss, grads = jax.value_and_grad(loss_fn)(params, tokens, targets, key=key, is_training=True)
+    loss, grads = jax.value_and_grad(loss_fn)(
+        params, tokens, targets, key=key, is_training=True
+    )
     updates, updated_opt_state = optimizer.update(grads, opt_state, params)
     updated_params = optax.apply_updates(params, updates)
     return updated_params, updated_opt_state, loss

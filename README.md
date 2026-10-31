@@ -97,5 +97,25 @@ for splitting independent keys for its blocks and dropout locations.
 The checkpoint configuration records the dropout rate.
 
 Training mode and rate must be known when tracing Python conditionals.
-No dropout training experiment has been run yet; current verification and
-open issues are recorded in `PROGRESS.md`.
+Measured dropout experiments are recorded in `PROGRESS.md`.
+
+## Larger-model setup
+
+Bogdan's model settings are width 384, 6 heads, 6 layers, context 256, and
+dropout 0.2. The harness defaults are batch size 64, 5000 updates, evaluation
+every 500 updates over 20 batches, and seed 1337. Adam's learning rate is
+`model.LEARNING_RATE = 3e-4`, saved with the checkpoint configuration.
+
+The longer context, larger batch, new architecture, and learning rate change
+together; this is not a controlled dropout comparison with the tiny runs.
+Actual large-model GPU memory use and throughput have not been measured.
+Do not launch the full run before the prediction/preflight checkpoint.
+
+Model behavior tests use a tiny configuration. `tests/test_scaling.py` checks
+the configured full-context/batch shapes via abstract tracing, without
+allocating the full training batch or performing updates. This does not prove
+that full training fits in GPU memory.
+
+Multi-head attention now includes a learned output projection and its dropout
+after concatenation. Tests cover projection-before-dropout ordering, independent
+head/output keys, and six-head evaluation without a key.

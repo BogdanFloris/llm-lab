@@ -1,20 +1,29 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 import model
 
 
+@pytest.fixture(autouse=True)
+def small_model(monkeypatch):
+    for name, value in {"N_EMBED": 32, "T_MAX": 8, "N_HEAD": 4, "N_LAYER": 3}.items():
+        monkeypatch.setattr(model, name, value)
+
+
 def test_parameters_are_an_array_pytree():
     shapes = jax.eval_shape(lambda key: model.init_params(key, 65), jax.random.key(0))
-    assert len(shapes["blocks"]) == 3
+    assert len(shapes["blocks"]) == model.N_LAYER
     for block_params in shapes["blocks"].values():
-        heads = block_params["mh"]
+        heads = block_params["mh"]["blocks"]
         assert len(heads) == model.N_HEAD
         for head in heads.values():
             assert set(head) == {"q", "k", "v"}
             for weight in head.values():
                 assert weight.shape == (model.N_EMBED, model.N_EMBED // model.N_HEAD)
+        assert block_params["mh"]["w"].shape == (model.N_EMBED, model.N_EMBED)
+        assert block_params["mh"]["b"].shape == (model.N_EMBED,)
         assert block_params["ffwd"]["w1"].shape == (model.N_EMBED, 4 * model.N_EMBED)
         assert block_params["ffwd"]["w2"].shape == (4 * model.N_EMBED, model.N_EMBED)
         for name in ("ln1", "ln2"):
@@ -68,7 +77,10 @@ def test_stack_supports_another_embedding_width(monkeypatch):
 
 def test_blocks_receive_distinct_random_keys():
     params = model.init_params(jax.random.key(0), 65)
-    queries = [block_params["mh"][0]["q"] for block_params in params["blocks"].values()]
+    queries = [
+        block_params["mh"]["blocks"][0]["q"]
+        for block_params in params["blocks"].values()
+    ]
     for i, query in enumerate(queries):
         for other in queries[i + 1:]:
             assert not np.array_equal(query, other)

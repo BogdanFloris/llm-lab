@@ -25,10 +25,10 @@ def evaluate(loss_fn, params, tokens, key, batch_size, block_size, batches):
 
 def main():
     parser = argparse.ArgumentParser()
-    _ = parser.add_argument("--steps", type=int, default=3000)
-    _ = parser.add_argument("--batch-size", type=int, default=32)
-    _ = parser.add_argument("--block-size", type=int, default=8)
-    _ = parser.add_argument("--eval-every", type=int, default=300)
+    _ = parser.add_argument("--steps", type=int, default=5000)
+    _ = parser.add_argument("--batch-size", type=int, default=64)
+    _ = parser.add_argument("--block-size", type=int, default=model.T_MAX)
+    _ = parser.add_argument("--eval-every", type=int, default=500)
     _ = parser.add_argument("--eval-batches", type=int, default=20)
     _ = parser.add_argument("--seed", type=int, default=1337)
     _ = parser.add_argument("--sample-tokens", type=int, default=300)
@@ -50,6 +50,7 @@ def main():
         "out": str(output),
         "vocab_size": len(tokenizer),
         "vocab": tokenizer.chars,
+        "learning_rate": model.LEARNING_RATE,
         "model": {
             "module": model.__name__,
             "n_embed": model.N_EMBED,

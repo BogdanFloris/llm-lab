@@ -15,7 +15,7 @@ def test_checkpoint_survives_sampling_failure(tmp_path, monkeypatch):
     params = {"weight": jnp.ones((2, 3)), "blocks": {"first": {}, "second": {}}}
     model = SimpleNamespace(
         __name__="test_model",
-        N_EMBED=3, T_MAX=8, N_HEAD=1, DROPOUT_RATE=0.2,
+        N_EMBED=3, T_MAX=8, N_HEAD=1, DROPOUT_RATE=0.2, LEARNING_RATE=3e-4,
         init_params=lambda key, vocab_size: params,
         optimizer=SimpleNamespace(init=lambda params: None),
         loss_fn=None,
@@ -42,6 +42,11 @@ def test_checkpoint_survives_sampling_failure(tmp_path, monkeypatch):
     assert checkpoint["config"]["model"]["module"] == "test_model"
     assert checkpoint["config"]["model"]["n_blocks"] == 2
     assert checkpoint["config"]["model"]["dropout_rate"] == 0.2
+    assert checkpoint["config"]["learning_rate"] == 3e-4
+    assert checkpoint["config"]["batch_size"] == 64
+    assert checkpoint["config"]["block_size"] == model.T_MAX
+    assert checkpoint["config"]["eval_every"] == 500
+    assert checkpoint["config"]["eval_batches"] == 20
 
 
 def test_evaluation_disables_dropout_and_keeps_batch_keys(monkeypatch):
